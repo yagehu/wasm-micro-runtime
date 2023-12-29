@@ -876,7 +876,7 @@ main(int argc, char *argv[])
     /* load WASM module */
     if (!(wasm_module = wasm_runtime_load(wasm_file_buf, wasm_file_size,
                                           error_buf, sizeof(error_buf)))) {
-        printf("%s\n", error_buf);
+        fprintf(stderr, "%s\n", error_buf);
         goto fail2;
     }
 
@@ -888,7 +888,7 @@ main(int argc, char *argv[])
     if (!(wasm_module_inst =
               wasm_runtime_instantiate(wasm_module, stack_size, heap_size,
                                        error_buf, sizeof(error_buf)))) {
-        printf("%s\n", error_buf);
+        fprintf(stderr, "%s\n", error_buf);
         goto fail3;
     }
 
@@ -904,7 +904,7 @@ main(int argc, char *argv[])
             wasm_runtime_get_exec_env_singleton(wasm_module_inst);
         uint32_t debug_port;
         if (exec_env == NULL) {
-            printf("%s\n", wasm_runtime_get_exception(wasm_module_inst));
+            fprintf(stderr, "%s\n", wasm_runtime_get_exception(wasm_module_inst));
             goto fail4;
         }
         debug_port = wasm_runtime_start_debug_instance(exec_env);
@@ -959,7 +959,7 @@ main(int argc, char *argv[])
 #endif
 
     if (exception)
-        printf("%s\n", exception);
+        fprintf(stderr, "%s\n", exception);
 
 #if WASM_ENABLE_STATIC_PGO != 0 && WASM_ENABLE_AOT != 0
     if (get_package_type(wasm_file_buf, wasm_file_size) == Wasm_Module_AoT
