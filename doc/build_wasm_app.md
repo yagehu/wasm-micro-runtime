@@ -5,7 +5,7 @@ Prepare WASM building environments
 
 For C and C++, WASI-SDK version 19.0+ is the major tool supported by WAMR to build WASM applications. Also, we can use [Emscripten SDK (EMSDK)](https://github.com/emscripten-core/emsdk), but it is not recommended. And there are some other compilers such as the standard clang compiler, which might also work [here](./other_wasm_compilers.md).
 
-To install WASI SDK, please download the [wasi-sdk release](https://github.com/CraneStation/wasi-sdk/releases) and extract the archive to default path `/opt/wasi-sdk`.
+To install WASI SDK, please download the [wasi-sdk release](https://github.com/WebAssembly/wasi-sdk/releases) and extract the archive to default path `/opt/wasi-sdk`.
 
 The official *wasi-sdk release* doesn't fully support *latest 128-bit SIMD spec* yet. WAMR provides a script in [build-wasi-sdk](../test-tools/build-wasi-sdk/) to generate
 another wasi-sdk with *llvm-15* from source code and installs it at *../test-tools/wasi-sdk*. If you plan to build WASM applications with *latest 128-bit SIMD*, please use it instead of the official release.
@@ -371,6 +371,20 @@ Examples: wamrc -o test.aot test.wasm
           wamrc --target=i386 -o test.aot test.wasm
           wamrc --target=i386 --format=object -o test.o test.wasm
 ```
+
+## AoT-compiled module compatibility among WAMR versions
+
+When making major ABI changes for AoT-compiled modules, we bump
+`AOT_CURRENT_VERSION` constant in `core/config.h` header.
+The runtime rejects to load a module AoT-compiled with wamrc with
+a different `AOT_CURRENT_VERSION`.
+
+We try our best to maintain our runtime ABI for AoT-compiled modules
+compatible among WAMR versions with the same `AOT_CURRENT_VERSION`
+so that combinations of older wamrc and newer runtime usually work.
+However, there might be minor incompatibilities time to time.
+For productions, we recommend to use the exactly same version of
+wamrc and the runtime.
 
 ## AoT compilation with 3rd-party toolchains
 

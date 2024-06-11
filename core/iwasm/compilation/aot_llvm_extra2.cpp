@@ -58,6 +58,7 @@ convert(LLVMRelocMode reloc_mode)
 #endif
 }
 
+#if LLVM_VERSION_MAJOR < 18
 static llvm::CodeGenOpt::Level
 convert(LLVMCodeGenOptLevel opt_level)
 {
@@ -74,6 +75,24 @@ convert(LLVMCodeGenOptLevel opt_level)
     bh_assert(0);
     return llvm::CodeGenOpt::None;
 }
+#else
+static llvm::CodeGenOptLevel
+convert(LLVMCodeGenOptLevel opt_level)
+{
+    switch (opt_level) {
+        case LLVMCodeGenLevelNone:
+            return llvm::CodeGenOptLevel::None;
+        case LLVMCodeGenLevelLess:
+            return llvm::CodeGenOptLevel::Less;
+        case LLVMCodeGenLevelDefault:
+            return llvm::CodeGenOptLevel::Default;
+        case LLVMCodeGenLevelAggressive:
+            return llvm::CodeGenOptLevel::Aggressive;
+    }
+    bh_assert(0);
+    return llvm::CodeGenOptLevel::None;
+}
+#endif
 
 static llvm::Optional<llvm::CodeModel::Model>
 convert(LLVMCodeModel code_model, bool *jit)
@@ -144,7 +163,7 @@ LLVMCreateTargetMachineWithOpts(LLVMTargetRef ctarget, const char *triple,
 }
 
 /* https://reviews.llvm.org/D153107 */
-#if LLVM_VERSION_MAJOR < 17
+#if LLVM_VERSION_MAJOR < 18
 using namespace llvm;
 
 LLVMTailCallKind

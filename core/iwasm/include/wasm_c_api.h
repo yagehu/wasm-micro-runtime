@@ -1,5 +1,11 @@
 // WebAssembly C API
 
+/**
+ * @file   wasm_c_api.h
+ *
+ * @brief  This file defines the WebAssembly C APIs
+ */
+
 #ifndef _WASM_C_API_H_
 #define _WASM_C_API_H_
 
@@ -22,12 +28,12 @@
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)
-#define DEPRECATED __attribute__((deprecated))
+#define WASM_API_DEPRECATED __attribute__((deprecated))
 #elif defined(_MSC_VER)
-#define DEPRECATED __declspec(deprecated)
+#define WASM_API_DEPRECATED __declspec(deprecated)
 #else
 #pragma message("WARNING: You need to implement DEPRECATED for this compiler")
-#define DEPRECATED
+#define WASM_API_DEPRECATED
 #endif
 
 #ifdef __cplusplus
@@ -90,7 +96,7 @@ typedef double float64_t;
 // Vectors
 // size: capacity
 // num_elems: current number of elements
-// size_of_elem: size of one elemen
+// size_of_elem: size of one element
 #define WASM_DECLARE_VEC(name, ptr_or_none) \
   typedef struct wasm_##name##_vec_t { \
     size_t size; \
@@ -177,19 +183,30 @@ typedef union MemAllocOption {
 } MemAllocOption;
 #endif /* MEM_ALLOC_OPTION_DEFINED */
 
-/* Runtime configration */
+/* Runtime configuration */
 struct wasm_config_t {
     mem_alloc_type_t mem_alloc_type;
     MemAllocOption mem_alloc_option;
-    bool linux_perf_support;
+    uint32_t segue_flags;
+    bool enable_linux_perf;
     /*TODO: wasi args*/
 };
+
+#ifndef INSTANTIATION_ARGS_OPTION_DEFINED
+#define INSTANTIATION_ARGS_OPTION_DEFINED
+/* WASM module instantiation arguments */
+typedef struct InstantiationArgs {
+    uint32_t default_stack_size;
+    uint32_t host_managed_heap_size;
+    uint32_t max_memory_pages;
+} InstantiationArgs;
+#endif /* INSTANTIATION_ARGS_OPTION_DEFINED */
 
 /*
  * by default:
  * - mem_alloc_type is Alloc_With_System_Allocator
  * - mem_alloc_option is all 0
- * - linux_perf_support is false
+ * - enable_linux_perf is false
  */
 WASM_API_EXTERN own wasm_config_t* wasm_config_new(void);
 
@@ -199,6 +216,17 @@ wasm_config_set_mem_alloc_opt(wasm_config_t *, mem_alloc_type_t, MemAllocOption 
 
 WASM_API_EXTERN own wasm_config_t*
 wasm_config_set_linux_perf_opt(wasm_config_t *, bool);
+
+/**
+ * Enable using GS register as the base address of linear memory in linux x86_64,
+ * which may speedup the linear memory access for LLVM AOT/JIT:
+ *   bit0 to bit4 denotes i32.load, i64.load, f32.load, f64.load, v128.load
+ *   bit8 to bit12 denotes i32.store, i64.store, f32.store, f64.store, v128.store
+ * For example, 0x01 enables i32.load, 0x0100 enables i32.store.
+ * To enable all load/store operations, use 0x1F1F
+ */
+WASM_API_EXTERN wasm_config_t*
+wasm_config_set_segue_flags(wasm_config_t *config, uint32_t segue_flags);
 
 // Engine
 
@@ -219,7 +247,7 @@ WASM_DECLARE_OWN(engine)
  */
 WASM_API_EXTERN own wasm_engine_t* wasm_engine_new(void);
 WASM_API_EXTERN own wasm_engine_t* wasm_engine_new_with_config(wasm_config_t*);
-DEPRECATED WASM_API_EXTERN own wasm_engine_t *
+WASM_API_DEPRECATED WASM_API_EXTERN own wasm_engine_t *
 wasm_engine_new_with_args(mem_alloc_type_t type, const MemAllocOption *opts);
 
 // Store
@@ -269,7 +297,8 @@ enum wasm_valkind_enum {
   WASM_I64,
   WASM_F32,
   WASM_F64,
-  WASM_ANYREF = 128,
+  WASM_V128,
+  WASM_EXTERNREF = 128,
   WASM_FUNCREF,
 };
 #endif
@@ -279,10 +308,10 @@ WASM_API_EXTERN own wasm_valtype_t* wasm_valtype_new(wasm_valkind_t);
 WASM_API_EXTERN wasm_valkind_t wasm_valtype_kind(const wasm_valtype_t*);
 
 static inline bool wasm_valkind_is_num(wasm_valkind_t k) {
-  return k < WASM_ANYREF;
+  return k < WASM_EXTERNREF;
 }
 static inline bool wasm_valkind_is_ref(wasm_valkind_t k) {
-  return k >= WASM_ANYREF;
+  return k >= WASM_EXTERNREF;
 }
 
 static inline bool wasm_valtype_is_num(const wasm_valtype_t* t) {
@@ -405,6 +434,7 @@ struct wasm_ref_t;
 
 typedef struct wasm_val_t {
   wasm_valkind_t kind;
+  uint8_t _paddings[7];
   union {
     int32_t i32;
     int64_t i64;
@@ -494,9 +524,26 @@ struct WASMModuleCommon;
 typedef struct WASMModuleCommon *wasm_module_t;
 #endif
 
+#ifndef LOAD_ARGS_OPTION_DEFINED
+#define LOAD_ARGS_OPTION_DEFINED
+typedef struct LoadArgs {
+    char *name;
+    /* True by default, used by wasm-c-api only.
+    If false, the wasm input buffer (wasm_byte_vec_t) is referenced by the
+    module instead of being cloned. Hence, it can be freed after module loading. */
+    bool clone_wasm_binary;
+    /* This option is only used by the AOT/wasm loader (see wasm_export.h) */
+    bool wasm_binary_freeable;
+    /* TODO: more fields? */
+} LoadArgs;
+#endif /* LOAD_ARGS_OPTION_DEFINED */
 
 WASM_API_EXTERN own wasm_module_t* wasm_module_new(
   wasm_store_t*, const wasm_byte_vec_t* binary);
+
+// please refer to wasm_runtime_load_ex(...) in core/iwasm/include/wasm_export.h
+WASM_API_EXTERN own wasm_module_t* wasm_module_new_ex(
+  wasm_store_t*, wasm_byte_vec_t* binary, LoadArgs *args);
 
 WASM_API_EXTERN void wasm_module_delete(own wasm_module_t*);
 
@@ -512,6 +559,11 @@ typedef wasm_module_t wasm_shared_module_t;
 WASM_API_EXTERN own wasm_shared_module_t* wasm_module_share(wasm_module_t*);
 WASM_API_EXTERN own wasm_module_t* wasm_module_obtain(wasm_store_t*, wasm_shared_module_t*);
 WASM_API_EXTERN void wasm_shared_module_delete(own wasm_shared_module_t*);
+
+WASM_API_EXTERN bool wasm_module_set_name(wasm_module_t*, const char* name);
+WASM_API_EXTERN const char *wasm_module_get_name(wasm_module_t*);
+
+WASM_API_EXTERN bool wasm_module_is_underlying_binary_freeable(const wasm_module_t *module);
 
 
 // Function Instances
@@ -631,6 +683,12 @@ WASM_API_EXTERN own wasm_instance_t* wasm_instance_new_with_args(
   own wasm_trap_t** trap, const uint32_t stack_size, const uint32_t heap_size
 );
 
+// please refer to wasm_runtime_instantiate_ex(...) in core/iwasm/include/wasm_export.h
+WASM_API_EXTERN own wasm_instance_t* wasm_instance_new_with_args_ex(
+  wasm_store_t*, const wasm_module_t*, const wasm_extern_vec_t *imports,
+  own wasm_trap_t** trap, const InstantiationArgs *inst_args
+);
+
 WASM_API_EXTERN void wasm_instance_exports(const wasm_instance_t*, own wasm_extern_vec_t* out);
 
 
@@ -657,9 +715,12 @@ static inline own wasm_valtype_t* wasm_valtype_new_f32(void) {
 static inline own wasm_valtype_t* wasm_valtype_new_f64(void) {
   return wasm_valtype_new(WASM_F64);
 }
+static inline own wasm_valtype_t* wasm_valtype_new_v128(void) {
+  return wasm_valtype_new(WASM_V128);
+}
 
 static inline own wasm_valtype_t* wasm_valtype_new_anyref(void) {
-  return wasm_valtype_new(WASM_ANYREF);
+  return wasm_valtype_new(WASM_EXTERNREF);
 }
 static inline own wasm_valtype_t* wasm_valtype_new_funcref(void) {
   return wasm_valtype_new(WASM_FUNCREF);
@@ -815,12 +876,12 @@ static inline void* wasm_val_ptr(const wasm_val_t* val) {
 #endif
 }
 
-#define WASM_I32_VAL(i) {.kind = WASM_I32, .of = {.i32 = i}}
-#define WASM_I64_VAL(i) {.kind = WASM_I64, .of = {.i64 = i}}
-#define WASM_F32_VAL(z) {.kind = WASM_F32, .of = {.f32 = z}}
-#define WASM_F64_VAL(z) {.kind = WASM_F64, .of = {.f64 = z}}
-#define WASM_REF_VAL(r) {.kind = WASM_ANYREF, .of = {.ref = r}}
-#define WASM_INIT_VAL {.kind = WASM_ANYREF, .of = {.ref = NULL}}
+#define WASM_I32_VAL(i) {.kind = WASM_I32, ._paddings = {0}, .of = {.i32 = i}}
+#define WASM_I64_VAL(i) {.kind = WASM_I64, ._paddings = {0}, .of = {.i64 = i}}
+#define WASM_F32_VAL(z) {.kind = WASM_F32, ._paddings = {0}, .of = {.f32 = z}}
+#define WASM_F64_VAL(z) {.kind = WASM_F64, ._paddings = {0}, .of = {.f64 = z}}
+#define WASM_REF_VAL(r) {.kind = WASM_EXTERNREF, ._paddings = {0}, .of = {.ref = r}}
+#define WASM_INIT_VAL {.kind = WASM_EXTERNREF, ._paddings = {0}, .of = {.ref = NULL}}
 
 #define KILOBYTE(n) ((n) * 1024)
 

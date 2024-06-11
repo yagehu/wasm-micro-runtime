@@ -5,8 +5,9 @@
 
 #include "platform_api_vmcore.h"
 
-#if (defined(__APPLE__) || defined(__MACH__)) && defined(__arm64__)
+#if defined(__APPLE__) || defined(__MACH__)
 #include <libkern/OSCacheControl.h>
+#include <TargetConditionals.h>
 #endif
 
 #ifndef BH_ENABLE_TRACE_MMAP
@@ -40,7 +41,8 @@ void *
 os_mmap(void *hint, size_t size, int prot, int flags, os_file_handle file)
 {
     int map_prot = PROT_NONE;
-#if (defined(__APPLE__) || defined(__MACH__)) && defined(__arm64__)
+#if (defined(__APPLE__) || defined(__MACH__)) && defined(__arm64__) \
+    && defined(TARGET_OS_OSX) && TARGET_OS_OSX != 0
     int map_flags = MAP_ANONYMOUS | MAP_PRIVATE | MAP_JIT;
 #else
     int map_flags = MAP_ANONYMOUS | MAP_PRIVATE;
@@ -63,9 +65,11 @@ os_mmap(void *hint, size_t size, int prot, int flags, os_file_handle file)
         /* integer overflow */
         return NULL;
 
+#if WASM_ENABLE_MEMORY64 == 0
     if (request_size > 16 * (uint64)UINT32_MAX)
-        /* at most 16 G is allowed */
+        /* at most 64 G is allowed */
         return NULL;
+#endif
 
     if (prot & MMAP_PROT_READ)
         map_prot |= PROT_READ;
@@ -132,7 +136,7 @@ os_mmap(void *hint, size_t size, int prot, int flags, os_file_handle file)
     }
 #endif /* end of BUILD_TARGET_RISCV64_LP64D || BUILD_TARGET_RISCV64_LP64 */
 
-    /* memory has't been mapped or was mapped failed previously */
+    /* memory hasn't been mapped or was mapped failed previously */
     if (addr == MAP_FAILED) {
         /* try 5 times */
         for (i = 0; i < 5; i++) {
@@ -234,6 +238,23 @@ os_munmap(void *addr, size_t size)
     }
 }
 
+#if WASM_HAVE_MREMAP != 0
+void *
+os_mremap(void *old_addr, size_t old_size, size_t new_size)
+{
+    void *ptr = mremap(old_addr, old_size, new_size, MREMAP_MAYMOVE);
+
+    if (ptr == MAP_FAILED) {
+#if BH_ENABLE_TRACE_MMAP != 0
+        os_printf("mremap failed: %d\n", errno);
+#endif
+        return os_mremap_slow(old_addr, old_size, new_size);
+    }
+
+    return ptr;
+}
+#endif
+
 int
 os_mprotect(void *addr, size_t size, int prot)
 {
@@ -263,7 +284,10 @@ os_dcache_flush(void)
 void
 os_icache_flush(void *start, size_t len)
 {
-#if (defined(__APPLE__) || defined(__MACH__)) && defined(__arm64__)
+#if defined(__APPLE__) || defined(__MACH__)
     sys_icache_invalidate(start, len);
+#else
+    (void)start;
+    (void)len;
 #endif
 }

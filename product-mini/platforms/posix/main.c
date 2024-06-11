@@ -55,10 +55,13 @@ print_help()
     printf("  --jit-codecache-size=n   Set fast jit maximum code cache size in bytes,\n");
     printf("                           default is %u KB\n", FAST_JIT_DEFAULT_CODE_CACHE_SIZE / 1024);
 #endif
+#if WASM_ENABLE_GC != 0
+    printf("  --gc-heap-size=n         Set maximum gc heap size in bytes,\n");
+    printf("                           default is %u KB\n", GC_HEAP_SIZE_DEFAULT / 1024);
+#endif
 #if WASM_ENABLE_JIT != 0
     printf("  --llvm-jit-size-level=n  Set LLVM JIT size level, default is 3\n");
     printf("  --llvm-jit-opt-level=n   Set LLVM JIT optimization level, default is 3\n");
-    printf("  --perf-profile           Enable linux perf support. For now, it only works in llvm-jit.\n");
 #if defined(os_writegsbase)
     printf("  --enable-segue[=<flags>] Enable using segment register GS as the base address of\n");
     printf("                           linear memory, which may improve performance, flags can be:\n");
@@ -67,6 +70,9 @@ print_help()
     printf("                           Use comma to separate, e.g. --enable-segue=i32.load,i64.store\n");
     printf("                           and --enable-segue means all flags are added.\n");
 #endif
+#endif /* WASM_ENABLE_JIT != 0*/
+#if WASM_ENABLE_LINUX_PERF != 0
+    printf("  --enable-linux-perf      Enable linux perf support. It works in aot and llvm-jit.\n");
 #endif
     printf("  --repl                   Start a very simple REPL (read-eval-print-loop) mode\n"
            "                           that runs commands in the form of \"FUNC ARG...\"\n");
@@ -423,7 +429,7 @@ module_reader_callback(package_type_t module_type, const char *module_name,
 }
 
 static void
-moudle_destroyer(uint8 *buffer, uint32 size)
+module_destroyer_callback(uint8 *buffer, uint32 size)
 {
     if (!buffer) {
         return;
@@ -439,6 +445,9 @@ static char global_heap_buf[WASM_GLOBAL_HEAP_SIZE] = { 0 };
 #else
 static void *
 malloc_func(
+#if WASM_MEM_ALLOC_WITH_USAGE != 0
+    mem_alloc_usage_t usage,
+#endif
 #if WASM_MEM_ALLOC_WITH_USER_DATA != 0
     void *user_data,
 #endif
@@ -449,6 +458,9 @@ malloc_func(
 
 static void *
 realloc_func(
+#if WASM_MEM_ALLOC_WITH_USAGE != 0
+    mem_alloc_usage_t usage, bool full_size_mmaped,
+#endif
 #if WASM_MEM_ALLOC_WITH_USER_DATA != 0
     void *user_data,
 #endif
@@ -459,6 +471,9 @@ realloc_func(
 
 static void
 free_func(
+#if WASM_MEM_ALLOC_WITH_USAGE != 0
+    mem_alloc_usage_t usage,
+#endif
 #if WASM_MEM_ALLOC_WITH_USER_DATA != 0
     void *user_data,
 #endif
@@ -520,21 +535,23 @@ void *
 timeout_thread(void *vp)
 {
     const struct timeout_arg *arg = vp;
-    uint32 left = arg->timeout_ms;
+    const uint64 end_time =
+        os_time_get_boot_us() + (uint64)arg->timeout_ms * 1000;
     while (!arg->cancel) {
-        uint32 ms;
-        if (left >= 100) {
-            ms = 100;
-        }
-        else {
-            ms = left;
-        }
-        os_usleep((uint64)ms * 1000);
-        left -= ms;
-        if (left == 0) {
+        const uint64 now = os_time_get_boot_us();
+        if ((int64)(now - end_time) > 0) {
             wasm_runtime_terminate(arg->inst);
             break;
         }
+        const uint64 left_us = end_time - now;
+        uint32 us;
+        if (left_us >= 100 * 1000) {
+            us = 100 * 1000;
+        }
+        else {
+            us = left_us;
+        }
+        os_usleep(us);
     }
     return NULL;
 }
@@ -557,11 +574,16 @@ main(int argc, char *argv[])
 #if WASM_ENABLE_FAST_JIT != 0
     uint32 jit_code_cache_size = FAST_JIT_DEFAULT_CODE_CACHE_SIZE;
 #endif
+#if WASM_ENABLE_GC != 0
+    uint32 gc_heap_size = GC_HEAP_SIZE_DEFAULT;
+#endif
 #if WASM_ENABLE_JIT != 0
     uint32 llvm_jit_size_level = 3;
     uint32 llvm_jit_opt_level = 3;
     uint32 segue_flags = 0;
-    bool enable_linux_perf_support = false;
+#endif
+#if WASM_ENABLE_LINUX_PERF != 0
+    bool enable_linux_perf = false;
 #endif
     wasm_module_t wasm_module = NULL;
     wasm_module_inst_t wasm_module_inst = NULL;
@@ -662,6 +684,13 @@ main(int argc, char *argv[])
             jit_code_cache_size = atoi(argv[0] + 21);
         }
 #endif
+#if WASM_ENABLE_GC != 0
+        else if (!strncmp(argv[0], "--gc-heap-size=", 15)) {
+            if (argv[0][15] == '\0')
+                return print_help();
+            gc_heap_size = atoi(argv[0] + 15);
+        }
+#endif
 #if WASM_ENABLE_JIT != 0
         else if (!strncmp(argv[0], "--llvm-jit-size-level=", 22)) {
             if (argv[0][22] == '\0')
@@ -702,9 +731,6 @@ main(int argc, char *argv[])
             if (segue_flags == (uint32)-1)
                 return print_help();
         }
-        else if (!strncmp(argv[0], "--perf-profile", 14)) {
-            enable_linux_perf_support = true;
-        }
 #endif /* end of WASM_ENABLE_JIT != 0 */
 #if BH_HAS_DLFCN
         else if (!strncmp(argv[0], "--native-lib=", 13)) {
@@ -716,6 +742,11 @@ main(int argc, char *argv[])
                 return 1;
             }
             native_lib_list[native_lib_count++] = argv[0] + 13;
+        }
+#endif
+#if WASM_ENABLE_LINUX_PERF != 0
+        else if (!strncmp(argv[0], "--enable-linux-perf", 19)) {
+            enable_linux_perf = true;
         }
 #endif
 #if WASM_ENABLE_MULTI_MODULE != 0
@@ -761,7 +792,7 @@ main(int argc, char *argv[])
             gen_prof_file = argv[0] + 16;
         }
 #endif
-        else if (!strncmp(argv[0], "--version", 9)) {
+        else if (!strcmp(argv[0], "--version")) {
             uint32 major, minor, patch;
             wasm_runtime_get_version(&major, &minor, &patch);
             printf("iwasm %" PRIu32 ".%" PRIu32 ".%" PRIu32 "\n", major, minor,
@@ -815,17 +846,24 @@ main(int argc, char *argv[])
     init_args.fast_jit_code_cache_size = jit_code_cache_size;
 #endif
 
+#if WASM_ENABLE_GC != 0
+    init_args.gc_heap_size = gc_heap_size;
+#endif
+
 #if WASM_ENABLE_JIT != 0
     init_args.llvm_jit_size_level = llvm_jit_size_level;
     init_args.llvm_jit_opt_level = llvm_jit_opt_level;
     init_args.segue_flags = segue_flags;
-    init_args.linux_perf_support = enable_linux_perf_support;
+#endif
+#if WASM_ENABLE_LINUX_PERF != 0
+    init_args.enable_linux_perf = enable_linux_perf;
 #endif
 
 #if WASM_ENABLE_DEBUG_INTERP != 0
     init_args.instance_port = instance_port;
     if (ip_addr)
-        strcpy(init_args.ip_addr, ip_addr);
+        /* ensure that init_args.ip_addr is null terminated */
+        strncpy(init_args.ip_addr, ip_addr, sizeof(init_args.ip_addr) - 1);
 #endif
 
     /* initialize runtime environment */
@@ -851,6 +889,7 @@ main(int argc, char *argv[])
 #if WASM_ENABLE_AOT != 0
     if (wasm_runtime_is_xip_file(wasm_file_buf, wasm_file_size)) {
         uint8 *wasm_file_mapped;
+        uint8 *daddr;
         int map_prot = MMAP_PROT_READ | MMAP_PROT_WRITE | MMAP_PROT_EXEC;
         int map_flags = MMAP_MAP_32BIT;
 
@@ -861,8 +900,15 @@ main(int argc, char *argv[])
             goto fail1;
         }
 
-        bh_memcpy_s(wasm_file_mapped, wasm_file_size, wasm_file_buf,
-                    wasm_file_size);
+#if (WASM_MEM_DUAL_BUS_MIRROR != 0)
+        daddr = os_get_dbus_mirror(wasm_file_mapped);
+#else
+        daddr = wasm_file_mapped;
+#endif
+        bh_memcpy_s(daddr, wasm_file_size, wasm_file_buf, wasm_file_size);
+#if (WASM_MEM_DUAL_BUS_MIRROR != 0)
+        os_dcache_flush();
+#endif
         wasm_runtime_free(wasm_file_buf);
         wasm_file_buf = wasm_file_mapped;
         is_xip_file = true;
@@ -870,7 +916,8 @@ main(int argc, char *argv[])
 #endif
 
 #if WASM_ENABLE_MULTI_MODULE != 0
-    wasm_runtime_set_module_reader(module_reader_callback, moudle_destroyer);
+    wasm_runtime_set_module_reader(module_reader_callback,
+                                   module_destroyer_callback);
 #endif
 
     /* load WASM module */
