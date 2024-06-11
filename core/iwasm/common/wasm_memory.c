@@ -276,7 +276,7 @@ void *
 wasm_runtime_malloc(unsigned int size)
 {
     if (size == 0) {
-        LOG_WARNING("warning: wasm_runtime_malloc with size zero\n");
+        //LOG_WARNING("warning: wasm_runtime_malloc with size zero\n");
         /* At lease alloc 1 byte to avoid malloc failed */
         size = 1;
 #if BH_ENABLE_GC_VERIFY != 0
