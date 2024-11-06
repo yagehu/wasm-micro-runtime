@@ -534,6 +534,10 @@ typedef struct LoadArgs {
     bool clone_wasm_binary;
     /* This option is only used by the AOT/wasm loader (see wasm_export.h) */
     bool wasm_binary_freeable;
+    /* false by default, if true, don't resolve the symbols yet. The
+       wasm_runtime_load_ex has to be followed by a wasm_runtime_resolve_symbols
+       call */
+    bool no_resolve;
     /* TODO: more fields? */
 } LoadArgs;
 #endif /* LOAD_ARGS_OPTION_DEFINED */
@@ -691,6 +695,11 @@ WASM_API_EXTERN own wasm_instance_t* wasm_instance_new_with_args_ex(
 
 WASM_API_EXTERN void wasm_instance_exports(const wasm_instance_t*, own wasm_extern_vec_t* out);
 
+// Return total wasm functions' execution time in ms
+WASM_API_EXTERN double wasm_instance_sum_wasm_exec_time(const wasm_instance_t*);
+// Return execution time in ms of a given wasm function with
+// func_name. If the function is not found, return 0.
+WASM_API_EXTERN double wasm_instance_get_wasm_func_exec_time(const wasm_instance_t*, const char *);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Convenience

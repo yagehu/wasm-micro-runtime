@@ -27,7 +27,7 @@ static char **app_argv;
 
 /* clang-format off */
 static int
-print_help()
+print_help(void)
 {
     printf("Usage: iwasm [-options] wasm_file [args...]\n");
     printf("options:\n");
@@ -295,7 +295,8 @@ load_native_lib(const char *name)
     /* open the native library */
     if (!(lib->handle = dlopen(name, RTLD_NOW | RTLD_GLOBAL))
         && !(lib->handle = dlopen(name, RTLD_LAZY))) {
-        LOG_WARNING("warning: failed to load native library %s", name);
+        LOG_WARNING("warning: failed to load native library %s. %s", name,
+                    dlerror());
         goto fail;
     }
 
@@ -926,6 +927,15 @@ main(int argc, char *argv[])
         fprintf(stderr, "%s\n", error_buf);
         goto fail2;
     }
+
+#if WASM_ENABLE_DYNAMIC_AOT_DEBUG != 0
+    if (!wasm_runtime_set_module_name(wasm_module, wasm_file, error_buf,
+                                      sizeof(error_buf))) {
+        printf("set aot module name failed in dynamic aot debug mode, %s\n",
+               error_buf);
+        goto fail3;
+    }
+#endif
 
 #if WASM_ENABLE_LIBC_WASI != 0
     libc_wasi_init(wasm_module, argc, argv, &wasi_parse_ctx);

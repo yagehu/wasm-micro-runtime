@@ -18,9 +18,9 @@ elseif(CONFIG_ARCH_X86_64)
   set(WAMR_BUILD_TARGET X86_64)
 elseif(CONFIG_ARCH_XTENSA)
   set(WAMR_BUILD_TARGET XTENSA)
-elseif(CONFIG_ARCH_RV64GC OR CONFIG_ARCH_RV64)
+elseif(CONFIG_ARCH_RV64)
   set(WAMR_BUILD_TARGET RISCV64)
-elseif(CONFIG_ARCH_RV32IM OR CONFIG_ARCH_RV32)
+elseif(CONFIG_ARCH_RV32)
   set(WAMR_BUILD_TARGET RISCV32)
 elseif(CONFIG_ARCH_SIM)
   if(CONFIG_SIM_M32 OR CONFIG_HOST_X86)
@@ -47,6 +47,12 @@ if(CONFIG_INTERPRETERS_WAMR_AOT_WORD_ALIGN_READ)
   add_definitions(-DWASM_ENABLE_WORD_ALIGN_READ=1)
 else()
   add_definitions(-DWASM_ENABLE_WORD_ALIGN_READ=0)
+endif()
+
+if(CONFIG_INTERPRETERS_WAMR_DYNAMIC_AOT_DEBUG)
+  add_definitions(-DWASM_ENABLE_DYNAMIC_AOT_DEBUG=1)
+else()
+  add_definitions(-DWASM_ENABLE_DYNAMIC_AOT_DEBUG=0)
 endif()
 
 if(CONFIG_INTERPRETERS_WAMR_STACK_GUARD_SIZE)
@@ -197,7 +203,7 @@ include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 # NuttX wamr lib complie required: `WAMR_SOURCES` `WAMR_CFLAGS` `WAMR_INCDIRS`
 # `WAMR_DEFINITIONS`
 set(WAMR_SOURCES ${WAMR_RUNTIME_LIB_SOURCE})
-set(WAMR_CFLAGS -Wno-strict-prototypes -Wno-shadow -Wno-unused-variable
+set(WAMR_CFLAGS -Wno-shadow -Wno-unused-variable
                 -Wno-int-conversion -Wno-implicit-function-declaration)
 get_directory_property(WAMR_INCDIRS INCLUDE_DIRECTORIES)
 get_directory_property(WAMR_DEFINITIONS COMPILE_DEFINITIONS)

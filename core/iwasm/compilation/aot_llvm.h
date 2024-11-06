@@ -75,10 +75,12 @@ typedef struct AOTValue {
     struct AOTValue *next;
     struct AOTValue *prev;
     LLVMValueRef value;
+    uint64 const_value; /* valid if is_const is true */
+    uint32 local_idx;
     /* VALUE_TYPE_I32/I64/F32/F64/VOID */
     uint8 type;
     bool is_local;
-    uint32 local_idx;
+    bool is_const;
 } AOTValue;
 
 /**
@@ -195,7 +197,7 @@ typedef struct AOTBlockStack {
 typedef struct AOTCheckedAddr {
     struct AOTCheckedAddr *next;
     uint32 local_idx;
-    uint32 offset;
+    uint64 offset;
     uint32 bytes;
 } AOTCheckedAddr, *AOTCheckedAddrList;
 
@@ -239,6 +241,9 @@ typedef struct AOTFuncContext {
 
     bool mem_space_unchanged;
     AOTCheckedAddrList checked_addr_list;
+
+    LLVMValueRef shared_heap_base_addr_adj;
+    LLVMValueRef shared_heap_start_off;
 
     LLVMBasicBlockRef got_exception_block;
     LLVMBasicBlockRef func_return_block;
@@ -408,7 +413,10 @@ typedef struct AOTCompContext {
     bool enable_aux_stack_check;
 
     /* Generate auxiliary stack frame */
-    bool enable_aux_stack_frame;
+    AOTStackFrameType aux_stack_frame_type;
+
+    /* Auxiliary call stack features */
+    AOTCallStackFeatures call_stack_features;
 
     /* Function performance profiling */
     bool enable_perf_profiling;
@@ -461,6 +469,8 @@ typedef struct AOTCompContext {
 
     /* Enable GC */
     bool enable_gc;
+
+    bool enable_shared_heap;
 
     uint32 opt_level;
     uint32 size_level;
@@ -572,14 +582,14 @@ wasm_type_to_llvm_type(const AOTCompContext *comp_ctx,
 
 bool
 aot_checked_addr_list_add(AOTFuncContext *func_ctx, uint32 local_idx,
-                          uint32 offset, uint32 bytes);
+                          uint64 offset, uint32 bytes);
 
 void
 aot_checked_addr_list_del(AOTFuncContext *func_ctx, uint32 local_idx);
 
 bool
 aot_checked_addr_list_find(AOTFuncContext *func_ctx, uint32 local_idx,
-                           uint32 offset, uint32 bytes);
+                           uint64 offset, uint32 bytes);
 
 void
 aot_checked_addr_list_destroy(AOTFuncContext *func_ctx);

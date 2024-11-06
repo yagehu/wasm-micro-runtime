@@ -104,8 +104,9 @@ os_thread_exit(void *retval);
 #endif
 
 /* Clang's __GNUC_PREREQ macro has a different meaning than GCC one,
-   so we have to handle this case specially */
-#if defined(__clang__)
+   so we have to handle this case specially(except the CCAC compiler
+   provided by MetaWare, which doesn't support atomic operations) */
+#if defined(__clang__) && !defined(__CCAC__)
 /* Clang provides stdatomic.h since 3.6.0
    See https://releases.llvm.org/3.6.0/tools/clang/docs/ReleaseNotes.html */
 #if __clang_major__ > 3 || (__clang_major__ == 3 && __clang_minor__ >= 6)
@@ -378,19 +379,19 @@ os_sem_unlink(const char *name);
  * Initialize process-global state for os_wakeup_blocking_op.
  */
 int
-os_blocking_op_init();
+os_blocking_op_init(void);
 
 /**
  * Start accepting os_wakeup_blocking_op requests for the calling thread.
  */
 void
-os_begin_blocking_op();
+os_begin_blocking_op(void);
 
 /**
  * Stop accepting os_wakeup_blocking_op requests for the calling thread.
  */
 void
-os_end_blocking_op();
+os_end_blocking_op(void);
 
 /**
  * Wake up the specified thread.
@@ -1503,6 +1504,33 @@ os_file_handle
 os_convert_stderr_handle(os_raw_file_handle raw_stderr);
 
 /**
+ *
+ * @param fd a file handle
+ *
+ * @return true if it is stdin
+ */
+bool
+os_is_stdin_handle(os_file_handle fd);
+
+/**
+ *
+ * @param fd a file handle
+ *
+ * @return true if it is stdout
+ */
+bool
+os_is_stdout_handle(os_file_handle fd);
+
+/**
+ *
+ * @param fd a file handle
+ *
+ * @return true if it is stderr
+ */
+bool
+os_is_stderr_handle(os_file_handle fd);
+
+/**
  * Open a directory stream for the provided directory handle. The returned
  * directory stream will be positioned at the first entry in the directory.
  *
@@ -1558,7 +1586,7 @@ os_closedir(os_dir_stream dir_stream);
  * @return the invalid directory stream
  */
 os_dir_stream
-os_get_invalid_dir_stream();
+os_get_invalid_dir_stream(void);
 
 /**
  * Checks whether the given directory stream is valid. An invalid directory
@@ -1577,7 +1605,7 @@ os_is_dir_stream_valid(os_dir_stream *dir_stream);
  * @return the invalid handle
  */
 os_file_handle
-os_get_invalid_handle();
+os_get_invalid_handle(void);
 
 /**
  * Checks whether the given file handle is valid. An invalid handle is

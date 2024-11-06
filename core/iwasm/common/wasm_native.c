@@ -15,6 +15,9 @@
 #if WASM_ENABLE_THREAD_MGR != 0
 #include "../libraries/thread-mgr/thread_manager.h"
 #endif
+#if WASM_ENABLE_WASI_NN != 0 || WASM_ENABLE_WASI_EPHEMERAL_NN != 0
+#include "wasi_nn_host.h"
+#endif
 
 static NativeSymbolsList g_native_symbols_list = NULL;
 
@@ -30,11 +33,13 @@ uint32
 get_spectest_export_apis(NativeSymbol **p_libc_builtin_apis);
 #endif
 
+#if WASM_ENABLE_SHARED_HEAP != 0
+uint32
+get_lib_shared_heap_export_apis(NativeSymbol **p_shared_heap_apis);
+#endif
+
 uint32
 get_libc_wasi_export_apis(NativeSymbol **p_libc_wasi_apis);
-
-uint32_t
-get_wasi_nn_export_apis(NativeSymbol **p_libc_wasi_apis);
 
 uint32
 get_base_lib_export_apis(NativeSymbol **p_base_lib_apis);
@@ -233,7 +238,7 @@ wasm_native_resolve_symbol(const char *module_name, const char *field_name,
 #if WASM_ENABLE_WAMR_COMPILER == 0
                 /* Output warning except running aot compiler */
                 LOG_WARNING("failed to check signature '%s' and resolve "
-                            "pointer params for import function (%s %s)\n",
+                            "pointer params for import function (%s, %s)\n",
                             signature, module_name, field_name);
 #endif
                 return NULL;
@@ -469,17 +474,18 @@ wasi_context_dtor(WASMModuleInstanceCommon *inst, void *ctx)
 
 #if WASM_ENABLE_QUICK_AOT_ENTRY != 0
 static bool
-quick_aot_entry_init();
+quick_aot_entry_init(void);
 #endif
 
 bool
 wasm_native_init()
 {
-#if WASM_ENABLE_SPEC_TEST != 0 || WASM_ENABLE_LIBC_BUILTIN != 0     \
-    || WASM_ENABLE_BASE_LIB != 0 || WASM_ENABLE_LIBC_EMCC != 0      \
-    || WASM_ENABLE_LIB_RATS != 0 || WASM_ENABLE_WASI_NN != 0        \
-    || WASM_ENABLE_APP_FRAMEWORK != 0 || WASM_ENABLE_LIBC_WASI != 0 \
-    || WASM_ENABLE_LIB_PTHREAD != 0 || WASM_ENABLE_LIB_WASI_THREADS != 0
+#if WASM_ENABLE_SPEC_TEST != 0 || WASM_ENABLE_LIBC_BUILTIN != 0          \
+    || WASM_ENABLE_BASE_LIB != 0 || WASM_ENABLE_LIBC_EMCC != 0           \
+    || WASM_ENABLE_LIB_RATS != 0 || WASM_ENABLE_WASI_NN != 0             \
+    || WASM_ENABLE_APP_FRAMEWORK != 0 || WASM_ENABLE_LIBC_WASI != 0      \
+    || WASM_ENABLE_LIB_PTHREAD != 0 || WASM_ENABLE_LIB_WASI_THREADS != 0 \
+    || WASM_ENABLE_WASI_NN != 0 || WASM_ENABLE_WASI_EPHEMERAL_NN != 0
     NativeSymbol *native_symbols;
     uint32 n_native_symbols;
 #endif
@@ -508,6 +514,14 @@ wasm_native_init()
         goto fail;
     if (!wasm_native_register_natives("wasi_snapshot_preview1", native_symbols,
                                       n_native_symbols))
+        goto fail;
+#endif
+
+#if WASM_ENABLE_SHARED_HEAP != 0
+    n_native_symbols = get_lib_shared_heap_export_apis(&native_symbols);
+    if (n_native_symbols > 0
+        && !wasm_native_register_natives("env", native_symbols,
+                                         n_native_symbols))
         goto fail;
 #endif
 
@@ -565,25 +579,30 @@ wasm_native_init()
         goto fail;
 #endif /* WASM_ENABLE_LIB_RATS */
 
-#if WASM_ENABLE_WASI_NN != 0
-    n_native_symbols = get_wasi_nn_export_apis(&native_symbols);
-#if WASM_ENABLE_WASI_EPHEMERAL_NN != 0
-#define wasi_nn_module_name "wasi_ephemeral_nn"
-#else /* WASM_ENABLE_WASI_EPHEMERAL_NN == 0 */
-#define wasi_nn_module_name "wasi_nn"
-#endif /* WASM_ENABLE_WASI_EPHEMERAL_NN != 0 */
-    if (!wasm_native_register_natives(wasi_nn_module_name, native_symbols,
-                                      n_native_symbols))
+#if WASM_ENABLE_WASI_NN != 0 || WASM_ENABLE_WASI_EPHEMERAL_NN != 0
+    if (!wasi_nn_initialize())
         goto fail;
-#endif
+
+    n_native_symbols = get_wasi_nn_export_apis(&native_symbols);
+    if (n_native_symbols > 0
+        && !wasm_native_register_natives(
+#if WASM_ENABLE_WASI_EPHEMERAL_NN != 0
+            "wasi_ephemeral_nn",
+#else
+            "wasi_nn",
+#endif /* WASM_ENABLE_WASI_EPHEMERAL_NN != 0 */
+            native_symbols, n_native_symbols))
+        goto fail;
+#endif /* WASM_ENABLE_WASI_NN != 0 || WASM_ENABLE_WASI_EPHEMERAL_NN != 0 */
 
 #if WASM_ENABLE_QUICK_AOT_ENTRY != 0
     if (!quick_aot_entry_init()) {
-#if WASM_ENABLE_SPEC_TEST != 0 || WASM_ENABLE_LIBC_BUILTIN != 0     \
-    || WASM_ENABLE_BASE_LIB != 0 || WASM_ENABLE_LIBC_EMCC != 0      \
-    || WASM_ENABLE_LIB_RATS != 0 || WASM_ENABLE_WASI_NN != 0        \
-    || WASM_ENABLE_APP_FRAMEWORK != 0 || WASM_ENABLE_LIBC_WASI != 0 \
-    || WASM_ENABLE_LIB_PTHREAD != 0 || WASM_ENABLE_LIB_WASI_THREADS != 0
+#if WASM_ENABLE_SPEC_TEST != 0 || WASM_ENABLE_LIBC_BUILTIN != 0          \
+    || WASM_ENABLE_BASE_LIB != 0 || WASM_ENABLE_LIBC_EMCC != 0           \
+    || WASM_ENABLE_LIB_RATS != 0 || WASM_ENABLE_WASI_NN != 0             \
+    || WASM_ENABLE_APP_FRAMEWORK != 0 || WASM_ENABLE_LIBC_WASI != 0      \
+    || WASM_ENABLE_LIB_PTHREAD != 0 || WASM_ENABLE_LIB_WASI_THREADS != 0 \
+    || WASM_ENABLE_WASI_NN != 0 || WASM_ENABLE_WASI_EPHEMERAL_NN != 0
         goto fail;
 #else
         return false;
@@ -592,11 +611,12 @@ wasm_native_init()
 #endif
 
     return true;
-#if WASM_ENABLE_SPEC_TEST != 0 || WASM_ENABLE_LIBC_BUILTIN != 0     \
-    || WASM_ENABLE_BASE_LIB != 0 || WASM_ENABLE_LIBC_EMCC != 0      \
-    || WASM_ENABLE_LIB_RATS != 0 || WASM_ENABLE_WASI_NN != 0        \
-    || WASM_ENABLE_APP_FRAMEWORK != 0 || WASM_ENABLE_LIBC_WASI != 0 \
-    || WASM_ENABLE_LIB_PTHREAD != 0 || WASM_ENABLE_LIB_WASI_THREADS != 0
+#if WASM_ENABLE_SPEC_TEST != 0 || WASM_ENABLE_LIBC_BUILTIN != 0          \
+    || WASM_ENABLE_BASE_LIB != 0 || WASM_ENABLE_LIBC_EMCC != 0           \
+    || WASM_ENABLE_LIB_RATS != 0 || WASM_ENABLE_WASI_NN != 0             \
+    || WASM_ENABLE_APP_FRAMEWORK != 0 || WASM_ENABLE_LIBC_WASI != 0      \
+    || WASM_ENABLE_LIB_PTHREAD != 0 || WASM_ENABLE_LIB_WASI_THREADS != 0 \
+    || WASM_ENABLE_WASI_NN != 0 || WASM_ENABLE_WASI_EPHEMERAL_NN != 0
 fail:
     wasm_native_destroy();
     return false;
@@ -614,12 +634,17 @@ wasm_native_destroy()
         g_wasi_context_key = NULL;
     }
 #endif
+
 #if WASM_ENABLE_LIB_PTHREAD != 0
     lib_pthread_destroy();
 #endif
 
 #if WASM_ENABLE_LIB_WASI_THREADS != 0
     lib_wasi_threads_destroy();
+#endif
+
+#if WASM_ENABLE_WASI_NN != 0 || WASM_ENABLE_WASI_EPHEMERAL_NN != 0
+    wasi_nn_destroy();
 #endif
 
     node = g_native_symbols_list;
@@ -1449,7 +1474,7 @@ quick_aot_entry_cmp(const void *quick_aot_entry1, const void *quick_aot_entry2)
 }
 
 static bool
-quick_aot_entry_init()
+quick_aot_entry_init(void)
 {
     qsort(quick_aot_entries, sizeof(quick_aot_entries) / sizeof(QuickAOTEntry),
           sizeof(QuickAOTEntry), quick_aot_entry_cmp);

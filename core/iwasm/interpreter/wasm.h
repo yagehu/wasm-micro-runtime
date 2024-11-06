@@ -93,6 +93,18 @@ extern "C" {
 #define MAX_PAGE_COUNT_FLAG 0x01
 #define SHARED_MEMORY_FLAG 0x02
 #define MEMORY64_FLAG 0x04
+#define MAX_TABLE_SIZE_FLAG 0x01
+/* the shared flag for table is not actual used now */
+#define SHARED_TABLE_FLAG 0x02
+#define TABLE64_FLAG 0x04
+
+/**
+ * In the multi-memory proposal, the memarg in loads and stores are
+ * reinterpreted as a bitfield, bit 6 serves as a flag indicating the presence
+ * of the optional memory index, if it is set, then an i32 memory index follows
+ * after the alignment bitfield
+ */
+#define OPT_MEMIDX_FLAG 0x40
 
 #define DEFAULT_NUM_BYTES_PER_PAGE 65536
 #define DEFAULT_MAX_PAGES 65536
@@ -480,12 +492,13 @@ typedef void *WASMString;
 #endif /* end of WASM_ENABLE_STRINGREF != 0 */
 #endif /* end of WASM_ENABLE_GC != 0 */
 
-typedef struct WASMTable {
+typedef struct WASMTableType {
     uint8 elem_type;
     /**
      * 0: no max size and not shared
-     * 1: hax max size
+     * 1: has max size
      * 2: shared
+     * 4: table64
      */
     uint8 flags;
     bool possible_grow;
@@ -494,6 +507,12 @@ typedef struct WASMTable {
     uint32 max_size;
 #if WASM_ENABLE_GC != 0
     WASMRefType *elem_ref_type;
+#endif
+} WASMTableType;
+
+typedef struct WASMTable {
+    WASMTableType table_type;
+#if WASM_ENABLE_GC != 0
     /* init expr for the whole table */
     InitializerExpression init_expr;
 #endif
@@ -506,27 +525,23 @@ typedef uint64 mem_offset_t;
 typedef uint32 mem_offset_t;
 #define PR_MEM_OFFSET PRIu32
 #endif
+typedef mem_offset_t tbl_elem_idx_t;
 
 typedef struct WASMMemory {
     uint32 flags;
     uint32 num_bytes_per_page;
     uint32 init_page_count;
     uint32 max_page_count;
-} WASMMemory, WASMMemoryType;
+} WASMMemory;
+#ifndef WASM_MEMORY_T_DEFINED
+#define WASM_MEMORY_T_DEFINED
+typedef struct WASMMemory WASMMemoryType;
+#endif
 
 typedef struct WASMTableImport {
     char *module_name;
     char *field_name;
-    /* 0: no max size, 1: has max size */
-    uint8 elem_type;
-    uint8 flags;
-    bool possible_grow;
-    uint32 init_size;
-    /* specified if (flags & 1), else it is 0x10000 */
-    uint32 max_size;
-#if WASM_ENABLE_GC != 0
-    WASMRefType *elem_ref_type;
-#endif
+    WASMTableType table_type;
 #if WASM_ENABLE_MULTI_MODULE != 0
     WASMModule *import_module;
     WASMTable *import_table_linked;
@@ -835,6 +850,9 @@ struct WASMModule {
        AOTModule structure. */
     uint32 module_type;
 
+    /* the package version read from the WASM file */
+    uint32 package_version;
+
     uint32 type_count;
     uint32 import_count;
     uint32 function_count;
@@ -964,8 +982,9 @@ struct WASMModule {
     uint64 buf_code_size;
 #endif
 
-#if WASM_ENABLE_DEBUG_INTERP != 0 || WASM_ENABLE_FAST_JIT != 0 \
-    || WASM_ENABLE_DUMP_CALL_STACK != 0 || WASM_ENABLE_JIT != 0
+#if WASM_ENABLE_DEBUG_INTERP != 0 || WASM_ENABLE_FAST_JIT != 0  \
+    || WASM_ENABLE_DUMP_CALL_STACK != 0 || WASM_ENABLE_JIT != 0 \
+    || WASM_ENABLE_WAMR_COMPILER != 0
     uint8 *load_addr;
     uint64 load_size;
 #endif
@@ -1226,6 +1245,9 @@ wasm_value_type_size_internal(uint8 value_type, uint8 pointer_size)
     else {
         bh_assert(0);
     }
+#if WASM_ENABLE_GC == 0
+    (void)pointer_size;
+#endif
     return 0;
 }
 

@@ -459,8 +459,27 @@ fd_determine_type_rights(os_file_handle fd, __wasi_filetype_t *type,
                          __wasi_rights_t *rights_inheriting)
 {
     struct __wasi_filestat_t buf;
-    __wasi_errno_t error = os_fstat(fd, &buf);
+    __wasi_errno_t error;
 
+    if (os_is_stdin_handle(fd)) {
+        *rights_base = RIGHTS_STDIN;
+        *rights_inheriting = RIGHTS_STDIN;
+        return __WASI_ESUCCESS;
+    }
+
+    if (os_is_stdout_handle(fd)) {
+        *rights_base = RIGHTS_STDOUT;
+        *rights_inheriting = RIGHTS_STDOUT;
+        return __WASI_ESUCCESS;
+    }
+
+    if (os_is_stderr_handle(fd)) {
+        *rights_base = RIGHTS_STDERR;
+        *rights_inheriting = RIGHTS_STDERR;
+        return __WASI_ESUCCESS;
+    }
+
+    error = os_fstat(fd, &buf);
     if (error != __WASI_ESUCCESS)
         return error;
 
@@ -3111,7 +3130,7 @@ compare_address(const struct addr_pool *addr_pool_entry,
         }
         addr_size = 16;
     }
-    max_addr_mask = addr_size * 8;
+    max_addr_mask = (uint8)(addr_size * 8);
 
     /* IPv4 0.0.0.0 or IPv6 :: means any address */
     if (basebuf[0] == 0 && !memcmp(basebuf, basebuf + 1, addr_size - 1)) {

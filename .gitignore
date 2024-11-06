@@ -5,12 +5,15 @@
 .venv
 /.idea
 **/cmake-build-*/
-**/*build/
+**/*build*/
+!/build-scripts
 *.obj
 *.a
 *.so
 .clangd
 .DS_Store
+*.o
+.aider*
 
 core/deps/**
 core/shared/mem-alloc/tlsf

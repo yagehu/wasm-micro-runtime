@@ -20,6 +20,7 @@
     && !defined(BUILD_TARGET_RISCV64_LP64D) \
     && !defined(BUILD_TARGET_RISCV64_LP64) \
     && !defined(BUILD_TARGET_RISCV32_ILP32D) \
+    && !defined(BUILD_TARGET_RISCV32_ILP32F) \
     && !defined(BUILD_TARGET_RISCV32_ILP32) \
     && !defined(BUILD_TARGET_ARC)
 /* clang-format on */
@@ -43,7 +44,11 @@
 #define BUILD_TARGET_XTENSA
 #elif defined(__riscv) && (__riscv_xlen == 64)
 #define BUILD_TARGET_RISCV64_LP64D
-#elif defined(__riscv) && (__riscv_xlen == 32)
+#elif defined(__riscv) && (__riscv_xlen == 32) && !defined(__riscv_flen)
+#define BUILD_TARGET_RISCV32_ILP32
+#elif defined(__riscv) && (__riscv_xlen == 32) && (__riscv_flen == 32)
+#define BUILD_TARGET_RISCV32_ILP32F
+#elif defined(__riscv) && (__riscv_xlen == 32) && (__riscv_flen == 64)
 #define BUILD_TARGET_RISCV32_ILP32D
 #elif defined(__arc__)
 #define BUILD_TARGET_ARC
@@ -70,12 +75,16 @@
 #define WASM_ENABLE_AOT 0
 #endif
 
+#ifndef WASM_ENABLE_DYNAMIC_AOT_DEBUG
+#define WASM_ENABLE_DYNAMIC_AOT_DEBUG 0
+#endif
+
 #ifndef WASM_ENABLE_WORD_ALIGN_READ
 #define WASM_ENABLE_WORD_ALIGN_READ 0
 #endif
 
 #define AOT_MAGIC_NUMBER 0x746f6100
-#define AOT_CURRENT_VERSION 3
+#define AOT_CURRENT_VERSION 4
 
 #ifndef WASM_ENABLE_JIT
 #define WASM_ENABLE_JIT 0
@@ -363,6 +372,10 @@
 #define WASM_ENABLE_SPEC_TEST 0
 #endif
 
+#ifndef WASM_ENABLE_WASI_TEST
+#define WASM_ENABLE_WASI_TEST 0
+#endif
+
 /* Global heap pool size in bytes */
 #ifndef WASM_GLOBAL_HEAP_SIZE
 #define WASM_GLOBAL_HEAP_SIZE (10 * 1024 * 1024)
@@ -383,7 +396,9 @@
 #define APP_HEAP_SIZE_DEFAULT (8 * 1024)
 #endif
 #define APP_HEAP_SIZE_MIN (256)
-#define APP_HEAP_SIZE_MAX (512 * 1024 * 1024)
+/* The ems memory allocator supports maximal heap size 1GB,
+   see ems_gc_internal.h */
+#define APP_HEAP_SIZE_MAX (1024 * 1024 * 1024)
 
 /* Default min/max gc heap size of each app */
 #ifndef GC_HEAP_SIZE_DEFAULT
@@ -655,6 +670,11 @@
 #define WASM_ENABLE_MEMORY64 0
 #endif
 
+/* Disable multi-memory by default */
+#ifndef WASM_ENABLE_MULTI_MEMORY
+#define WASM_ENABLE_MULTI_MEMORY 0
+#endif
+
 #ifndef WASM_TABLE_MAX_SIZE
 #define WASM_TABLE_MAX_SIZE 1024
 #endif
@@ -667,13 +687,15 @@
 #define WASM_ENABLE_FUZZ_TEST 0
 #endif
 
-#ifndef WASM_MEM_ALLOC_MAX_SIZE
 #if WASM_ENABLE_FUZZ_TEST != 0
+#ifndef WASM_MEM_ALLOC_MAX_SIZE
 /* In oss-fuzz, the maximum RAM is ~2.5G */
 #define WASM_MEM_ALLOC_MAX_SIZE (2U * 1024 * 1024 * 1024)
-#else
-#define WASM_MEM_ALLOC_MAX_SIZE UINT32_MAX
 #endif
+#endif /* WASM_ENABLE_FUZZ_TEST != 0 */
+
+#ifndef WASM_ENABLE_SHARED_HEAP
+#define WASM_ENABLE_SHARED_HEAP 0
 #endif
 
 #endif /* end of _CONFIG_H_ */

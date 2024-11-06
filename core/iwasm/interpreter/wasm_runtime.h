@@ -13,10 +13,6 @@
 #include "../common/wasm_runtime_common.h"
 #include "../common/wasm_exec_env.h"
 
-#if WASM_ENABLE_WASI_NN != 0
-#include "../libraries/wasi-nn/src/wasi_nn_private.h"
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -96,6 +92,15 @@ typedef union {
     uint32 u32[2];
 } MemBound;
 
+typedef struct WASMSharedHeap {
+    struct WASMSharedHeap *next;
+    void *heap_handle;
+    uint8 *base_addr;
+    uint64 size;
+    uint64 start_off_mem64;
+    uint64 start_off_mem32;
+} WASMSharedHeap;
+
 struct WASMMemoryInstance {
     /* Module type */
     uint32 module_type;
@@ -161,7 +166,8 @@ struct WASMMemoryInstance {
 struct WASMTableInstance {
     /* The element type */
     uint8 elem_type;
-    uint8 __padding__[7];
+    uint8 is_table64;
+    uint8 __padding__[6];
     union {
 #if WASM_ENABLE_GC != 0
         WASMRefType *elem_ref_type;
@@ -357,6 +363,19 @@ typedef struct WASMModuleInstanceExtra {
     uint32 max_aux_stack_used;
 #endif
 
+#if WASM_ENABLE_SHARED_HEAP != 0
+    WASMSharedHeap *shared_heap;
+#if WASM_ENABLE_JIT != 0
+    /*
+     * Adjusted shared heap based addr to simple the calculation
+     * in the aot code. The value is:
+     *   shared_heap->base_addr - shared_heap->start_off
+     */
+    uint8 *shared_heap_base_addr_adj;
+    MemBound shared_heap_start_off;
+#endif
+#endif
+
 #if WASM_ENABLE_DEBUG_INTERP != 0                         \
     || (WASM_ENABLE_FAST_JIT != 0 && WASM_ENABLE_JIT != 0 \
         && WASM_ENABLE_LAZY_JIT != 0)
@@ -517,6 +536,13 @@ wasm_load_from_sections(WASMSection *section_list, char *error_buf,
 void
 wasm_unload(WASMModule *module);
 
+bool
+wasm_resolve_symbols(WASMModule *module);
+
+bool
+wasm_resolve_import_func(const WASMModule *module,
+                         WASMFunctionImport *function);
+
 WASMModuleInstance *
 wasm_instantiate(WASMModule *module, WASMModuleInstance *parent,
                  WASMExecEnv *exec_env_main, uint32 stack_size,
@@ -543,12 +569,12 @@ wasm_set_running_mode(WASMModuleInstance *module_inst,
 WASMFunctionInstance *
 wasm_lookup_function(const WASMModuleInstance *module_inst, const char *name);
 
+WASMMemoryInstance *
+wasm_lookup_memory(const WASMModuleInstance *module_inst, const char *name);
+
 #if WASM_ENABLE_MULTI_MODULE != 0
 WASMGlobalInstance *
 wasm_lookup_global(const WASMModuleInstance *module_inst, const char *name);
-
-WASMMemoryInstance *
-wasm_lookup_memory(const WASMModuleInstance *module_inst, const char *name);
 
 WASMTableInstance *
 wasm_lookup_table(const WASMModuleInstance *module_inst, const char *name);
@@ -624,8 +650,15 @@ wasm_check_app_addr_and_convert(WASMModuleInstance *module_inst, bool is_str,
 WASMMemoryInstance *
 wasm_get_default_memory(WASMModuleInstance *module_inst);
 
+WASMMemoryInstance *
+wasm_get_memory_with_idx(WASMModuleInstance *module_inst, uint32 index);
+
 bool
 wasm_enlarge_memory(WASMModuleInstance *module_inst, uint32 inc_page_count);
+
+bool
+wasm_enlarge_memory_with_idx(WASMModuleInstance *module_inst,
+                             uint32 inc_page_count, uint32 memidx);
 
 bool
 wasm_call_indirect(WASMExecEnv *exec_env, uint32 tbl_idx, uint32 elem_idx,

@@ -41,6 +41,9 @@
 #include <llvm/Target/CodeGenCWrappers.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
+#if LLVM_VERSION_MAJOR >= 17
+#include <llvm/TargetParser/Triple.h>
+#endif
 #include <llvm/Transforms/Utils/LowerMemIntrinsics.h>
 #include <llvm/Transforms/Vectorize/LoopVectorize.h>
 #include <llvm/Transforms/Vectorize/LoadStoreVectorizer.h>
@@ -172,6 +175,9 @@ aot_check_simd_compatibility(const char *arch_c_str, const char *cpu_c_str)
     }
     else if (targetArch == llvm::Triple::aarch64) {
         return subTargetInfo->checkFeatures("+neon");
+    }
+    else if (targetArch == llvm::Triple::arc) {
+        return true;
     }
     else {
         return false;
@@ -411,7 +417,7 @@ aot_compress_aot_func_names(AOTCompContext *comp_ctx, uint32 *p_size)
         return NULL;
     }
 
-    compressed_str_len = Result.size();
+    compressed_str_len = (uint32)Result.size();
     if (!(compressed_str = (char *)wasm_runtime_malloc(compressed_str_len))) {
         aot_set_last_error("allocate memory failed");
         return NULL;

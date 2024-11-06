@@ -2620,9 +2620,9 @@ wasm_module_imports(const wasm_module_t *module, own wasm_importtype_vec_t *out)
                        - import_memory_count);
                 module_name_rt = import->u.names.module_name;
                 field_name_rt = import->u.names.field_name;
-                elem_type_rt = import->u.table.elem_type;
-                min_size = import->u.table.init_size;
-                max_size = import->u.table.max_size;
+                elem_type_rt = import->u.table.table_type.elem_type;
+                min_size = import->u.table.table_type.init_size;
+                max_size = import->u.table.table_type.max_size;
             }
 #endif
 
@@ -2634,9 +2634,9 @@ wasm_module_imports(const wasm_module_t *module, own wasm_importtype_vec_t *out)
                        - import_memory_count);
                 module_name_rt = import->module_name;
                 field_name_rt = import->table_name;
-                elem_type_rt = import->elem_type;
-                min_size = import->table_init_size;
-                max_size = import->table_max_size;
+                elem_type_rt = import->table_type.elem_type;
+                min_size = import->table_type.init_size;
+                max_size = import->table_type.max_size;
             }
 #endif
 
@@ -3383,22 +3383,8 @@ wasm_func_call(const wasm_func_t *func, const wasm_val_vec_t *params,
         if (!(func_comm_rt = func->func_comm_rt)) {
             AOTModuleInstance *inst_aot =
                 (AOTModuleInstance *)func->inst_comm_rt;
-            AOTModule *module_aot = (AOTModule *)inst_aot->module;
-            uint32 export_i = 0, export_func_j = 0;
-
-            for (; export_i < module_aot->export_count; ++export_i) {
-                AOTExport *export = module_aot->exports + export_i;
-                if (export->kind == EXPORT_KIND_FUNC) {
-                    if (export->index == func->func_idx_rt) {
-                        func_comm_rt =
-                            (AOTFunctionInstance *)inst_aot->export_functions
-                            + export_func_j;
-                        ((wasm_func_t *)func)->func_comm_rt = func_comm_rt;
-                        break;
-                    }
-                    export_func_j++;
-                }
-            }
+            func_comm_rt = ((wasm_func_t *)func)->func_comm_rt =
+                aot_lookup_function_with_idx(inst_aot, func->func_idx_rt);
         }
 #endif
     }
@@ -4195,13 +4181,13 @@ wasm_table_size(const wasm_table_t *table)
         if (table->table_idx_rt < module_aot->import_table_count) {
             AOTImportTable *table_aot =
                 module_aot->import_tables + table->table_idx_rt;
-            return table_aot->table_init_size;
+            return table_aot->table_type.init_size;
         }
         else {
             AOTTable *table_aot =
                 module_aot->tables
                 + (table->table_idx_rt - module_aot->import_table_count);
-            return table_aot->table_init_size;
+            return table_aot->table_type.init_size;
         }
     }
 #endif
@@ -5378,4 +5364,25 @@ wasm_extern_new_empty(wasm_store_t *store, wasm_externkind_t extern_kind)
 
     LOG_ERROR("Don't support linking table and memory for now");
     return NULL;
+}
+
+double
+wasm_instance_sum_wasm_exec_time(const wasm_instance_t *instance)
+{
+#if WASM_ENABLE_PERF_PROFILING != 0
+    return wasm_runtime_sum_wasm_exec_time(instance->inst_comm_rt);
+#else
+    return -1.0;
+#endif
+}
+
+double
+wasm_instance_get_wasm_func_exec_time(const wasm_instance_t *instance,
+                                      const char *name)
+{
+#if WASM_ENABLE_PERF_PROFILING != 0
+    return wasm_runtime_get_wasm_func_exec_time(instance->inst_comm_rt, name);
+#else
+    return -1.0;
+#endif
 }
